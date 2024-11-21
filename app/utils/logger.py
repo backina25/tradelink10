@@ -1,3 +1,4 @@
+import asyncio
 import logging
 
 def create_logger(name, level=logging.INFO):
@@ -10,7 +11,13 @@ def create_logger(name, level=logging.INFO):
     # Stream handler for STDERR
     stream_handler = logging.StreamHandler()
     stream_handler.setLevel(level)
+    # Async stream handler for STDERR
+    class AsyncStreamHandler(logging.StreamHandler):
+        async def emit(self, record):
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(None, super().emit, record)
 
+    stream_handler = AsyncStreamHandler()
     # Log format
     formatter = logging.Formatter(
         "%(asctime)s - %(name)s - %(levelname)s - %(message)s"

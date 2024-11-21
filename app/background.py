@@ -7,13 +7,14 @@ db_queue = Queue()
 # Dedicated queue for Broker operations
 broker_queue = Queue()
 
-def db_process(db_queue):
+async def db_process(db_queue):
     """Background process to handle DB operations."""
     while True:
         request = db_queue.get()  # Blocking call to wait for requests
         if request == "STOP":
             break
         # Process the DB operation here
+        await asyncio.sleep(0)  # Yield control to the event loop
         operation, payload = request
         if operation == "INSERT_SIGNAL":
             # Simulate DB insert logic
@@ -21,7 +22,7 @@ def db_process(db_queue):
             # Return a response (e.g., success/failure)
             db_queue.put(("SUCCESS", None))
 
-def broker_process(broker_queue):
+async def broker_process(broker_queue):
     """Background process to handle Broker operations."""
     while True:
         request = broker_queue.get()  # Blocking call to wait for requests
@@ -33,7 +34,7 @@ def broker_process(broker_queue):
             print(f"Broker Trade Execution: {payload}")
             broker_queue.put(("SUCCESS", None))
 
-def start_background_processes(db_queue, broker_queue):
+async def start_background_processes(db_queue, broker_queue):
     """Start the background processes."""
     db_proc = multiprocessing.Process(target=db_process, args=(db_queue,))
     broker_proc = multiprocessing.Process(target=broker_process, args=(broker_queue,))
