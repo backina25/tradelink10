@@ -1,23 +1,15 @@
+import os
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.orm import sessionmaker
 
-import asyncio
-from asyncpg import create_pool
+DATABASE_URL = os.getenv("DATABASE_URL")
 
-# project imports
-from app.utils.logger import db_logger
+# Create an asynchronous database engine
+engine = create_async_engine(DATABASE_URL, echo=True)
 
-DB_POOL = None
-
-async def setup_db():
-    global DB_POOL
-    DB_POOL = await create_pool(
-        user="your_db_user",
-        password="your_db_password",
-        database="your_db_name",
-        host="your_db_host",
-        port="5432"
-    )
-    db_logger.debug("Database connection established")
-
-async def close_db():
-    await DB_POOL.close()
-    db_logger.debug("Database connection closed")
+# Create a session factory
+AsyncSessionLocal = sessionmaker(
+    bind=engine,
+    expire_on_commit=False,
+    class_=AsyncSession
+)
