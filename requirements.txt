@@ -23,6 +23,7 @@ propcache==0.2.0
 psycopg2-binary==2.9.10
 pycares==4.4.0
 pycparser==2.22
+redis==5.2.0
 requests==2.32.3
 sanic==24.6.0
 sanic-routing==23.12.0

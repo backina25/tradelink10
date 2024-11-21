@@ -1,24 +1,37 @@
+import json
 import logging
 import multiprocessing
 import asyncio
-from multiprocessing import Queue
+from app.utils.redis_config import redis_conn
+from models import Signal
 
 logger = logging.getLogger("sanic.root.exch")
 
-async def exch_process_async(exch_queue):
-    """Async exch process coroutine."""
-    while True:
-        request = await asyncio.get_event_loop().run_in_executor(None, exch_queue.get)
-        if request == "STOP":
-            break
-        # Process the exch operation here
-        operation, payload = request
-        if operation == "EXECUTE_TRADE":
-            logger.debug(f"exch Trade Execution: {payload}")
-            # Simulate async exch API operation
-            await asyncio.sleep(1)
-            exch_queue.put(("SUCCESS", None))
+async def exch_process_async():
 
-def exch_process(exch_queue):
+    pubsub = redis_conn.pubsub()
+    pubsub.subscribe("broker_channel")
+    logger.debug("DB process subscribed to broker_channel")
+
+    while True:
+        message = pubsub.get_message(ignore_subscribe_messages=True)
+        if message and message["type"] == "message":
+            logger.debug(f"EXCH Process received task: {message}")
+
+            message_data = json.loads(message['data'])
+            operation = message_data["operation"]
+            payload = message_data["payload"]
+
+            if operation == "EXECUTE_TRADE":
+                signal = Signal.from_json(payload)
+                logger.debug(f"exch Trade Execution: {signal.__repr__()}")
+
+                # Simulate async exch API operation
+                await asyncio.sleep(1)
+
+            elif operation == "STOP":
+                break
+
+def exch_process():
     """Run the async exch process using asyncio.run."""
-    asyncio.run(exch_process_async(exch_queue))
+    asyncio.run(exch_process_async())

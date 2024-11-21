@@ -1,0 +1,15 @@
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "10000:10000"  # Map Sanic app to port 10000
+    env_file:
+      - .env  # Load environment variables from the .env file
+    depends_on:
+      - redis  # Ensure Redis starts before the app
+  redis:
+    image: redis:latest  # Use the official Redis image
+    ports:
+      - "6379:6379"  # Expose Redis for local debugging

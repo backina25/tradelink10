@@ -2,4 +2,3 @@
 docker builder prune
 docker build -t tradelink10 .
 docker run --env-file .env -it -p 10000:10000 tradelink10
-#docker run --env-file .env -it tradelink10 python app/main.py

@@ -1,24 +1,37 @@
+import json
 import logging
 import multiprocessing
 import asyncio
-from multiprocessing import Queue
+from app.utils.redis_config import redis_conn
+
+from models import Signal
 
 logger = logging.getLogger("sanic.root.db")
 
-async def db_process_async(db_queue):
-    """Async DB process coroutine."""
-    while True:
-        request = await asyncio.get_event_loop().run_in_executor(None, db_queue.get)
-        if request == "STOP":
-            break
-        # Process the DB operation here
-        operation, payload = request
-        if operation == "INSERT_SIGNAL":
-            logger.debug(f"DB Insert: {payload}")
-            # Simulate a success response
-            await asyncio.sleep(1)  # Simulate async DB operation
-            db_queue.put(("SUCCESS", None))
+async def db_process_async():
+    pubsub = redis_conn.pubsub()
+    pubsub.subscribe("db_channel")
+    logger.debug("DB process subscribed to db_channel")
 
-def db_process(db_queue):
+    while True:
+        message = pubsub.get_message(ignore_subscribe_messages=True)
+        if message and message["type"] == "message":
+            logger.debug(f"DB Process received task: {message}")
+
+            message_data = json.loads(message['data'])
+            operation = message_data["operation"]
+            payload = message_data["payload"]
+
+            if operation == "INSERT_SIGNAL":
+                signal = Signal.from_json(payload)
+                logger.debug(f"DB Insert: {signal.__repr__}")
+
+                # Simulate async exch API operation
+                await asyncio.sleep(1)
+            
+            elif operation == "STOP":
+                break 
+
+def db_process():
     """Run the async db process using asyncio.run."""
-    asyncio.run(db_process_async(db_queue))
+    asyncio.run(db_process_async())
