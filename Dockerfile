@@ -18,7 +18,8 @@ COPY config.py .
 RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose the application port
-EXPOSE 8000
+# The default value of PORT is 10000 for all Render web services 
+EXPOSE 10000
 
 # Command to run the app
 CMD ["python", "app/main.py"]

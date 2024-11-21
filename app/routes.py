@@ -5,6 +5,7 @@ def setup_routes(app):
     async def tradingview_webhook(request):
         try:
             data = request.json
+            print("Received data:", data)  # Debug: Log received payload
             
             # Validate payload
             required_fields = [
@@ -12,29 +13,32 @@ def setup_routes(app):
             ]
             for field in required_fields:
                 if field not in data:
-                    return json({"error": f"Missing required field: {field}"}, status=400)
-            
-            # Extract relevant fields
-            action = data["action"]
-            ticker = data["ticker"]
-            price = data["price"]
-            quantity = data["quantity"]
-            
-            # Log the received payload
-            print(f"Received webhook: {data}")
+                    error_message = f"Missing required field: {field}"
+                    print("Error:", error_message)  # Debug: Log validation errors
+                    return json({"error": error_message}, status=400)
+
+            # Safely extract fields with defaults
+            strategy = data.get("strategy", "unknown")
+            order_id = data.get("orderId", "unknown")
+            action = data.get("action", "unknown")
+            ticker = data.get("ticker", "unknown")
+            price = data.get("price", 0)
+            quantity = data.get("quantity", 0)
+
+            print(f"Action: {action}, Ticker: {ticker}, Price: {price}, Quantity: {quantity}")  # Debug: Log extracted fields
 
             # Process action
             if action.lower() == "buy":
                 await execute_buy(ticker, price, quantity)
             elif action.lower() == "sell":
                 await execute_sell(ticker, price, quantity)
-            elif action.lower() == "stop_loss":
-                await handle_stop_loss(ticker, price)
             else:
-                return json({"error": "Unknown action"}, status=400)
-            
+                error_message = "Unknown action"
+                print("Error:", error_message)  # Debug: Log unknown action
+                return json({"error": error_message}, status=400)
+
             return json({"status": "success", "message": "Signal processed"}, status=200)
 
         except Exception as e:
-            print(f"Error processing webhook: {e}")
+            print("Unhandled Exception:", e)  # Debug: Log unexpected errors
             return json({"error": "Internal Server Error"}, status=500)
