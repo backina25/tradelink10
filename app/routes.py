@@ -8,9 +8,8 @@ from app.models import Signal
 from app.utils.database import AsyncSessionLocal
 from app.utils.logger import webhook_logger
 from app.services.trading_service import execute_buy, execute_sell, handle_stop_loss
-from app.main import db_queue, broker_queue
 
-def setup_routes(app):
+def setup_routes(app, db_queue, broker_queue):
     @app.post("/webhook")
     async def tradingview_webhook(request):
         try:
@@ -18,11 +17,11 @@ def setup_routes(app):
             webhook_logger.info("Received data: %s", data)
 
             # Send the signal to the DB process
-            db_queue.put(("INSERT_SIGNAL", data))
+            await db_queue.put(("INSERT_SIGNAL", data))
             
             # Example: Send a trade execution to the Broker process
             if data["action"] in ["buy", "sell"]:
-                broker_queue.put(("EXECUTE_TRADE", data))
+                await broker_queue.put(("EXECUTE_TRADE", data))
 
             # Respond to the client immediately
             return json({"status": "success", "message": "Signal processed"}, status=200)

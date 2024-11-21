@@ -18,12 +18,12 @@ broker_queue = Queue()
 app = Sanic("tradelink10")
 
 # Setup routes
-setup_routes(app)
+setup_routes(app, db_queue, broker_queue)
 
 if __name__ == "__main__":
     # Start background processes
     db_proc, broker_proc = start_background_processes(db_queue, broker_queue)
-        
+
     try:
         app.run(host="0.0.0.0", port=10000, workers=4)
     finally:
