@@ -1,0 +1,4 @@
+#!/bin/bash
+docker builder prune
+docker run -it -p 10000:10000 tradelink10
+#docker run -it tradelink10 python app/main.py

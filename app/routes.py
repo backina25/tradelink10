@@ -1,6 +1,11 @@
 from sanic.response import json
 
+# project imports
+from app.services.trading_service import execute_buy, execute_sell, handle_stop_loss
+
+
 def setup_routes(app):
+    print("Setting up routes...")  # Debug: Log route setup
     @app.post("/webhook")
     async def tradingview_webhook(request):
         try:
@@ -32,11 +37,13 @@ def setup_routes(app):
                 await execute_buy(ticker, price, quantity)
             elif action.lower() == "sell":
                 await execute_sell(ticker, price, quantity)
+            elif action.lower() == "stop_loss":
+                await handle_stop_loss(ticker, price)
             else:
                 error_message = "Unknown action"
-                print("Error:", error_message)  # Debug: Log unknown action
+                print("Error:", error_message)
                 return json({"error": error_message}, status=400)
-
+            
             return json({"status": "success", "message": "Signal processed"}, status=200)
 
         except Exception as e:
