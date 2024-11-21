@@ -22,11 +22,11 @@ def setup_routes(app):
             logger.info("Received data: %s", data)
 
             # Send the signal to the DB process
-            await app.shared_ctx.db_queue.put(("INSERT_SIGNAL", data))
+            app.shared_ctx.db_queue.put(("INSERT_SIGNAL", data))
             
-            # Example: Send a trade execution to the Broker process
+            # Example: Send a trade execution to the exch process
             if data["action"] in ["buy", "sell"]:
-                await app.shared_ctx.broker_queue.put(("EXECUTE_TRADE", data))
+                app.shared_ctx.exch_queue.put(("EXECUTE_TRADE", data))
 
             # Respond to the client immediately
             return json({"status": "success", "message": "Signal processed"}, status=200)

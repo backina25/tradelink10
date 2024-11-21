@@ -10,7 +10,8 @@ import sys
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 # project imports
-from app.background import broker_process, db_process
+from app.process_db import db_process
+from app.process_exch import exch_process
 from app.routes import setup_routes
 from app.utils.logger import create_loggers
 
@@ -30,18 +31,22 @@ async def setup_main(app, loop):
 
     # Create the queues
     app.shared_ctx.db_queue = Queue()
-    app.shared_ctx.broker_queue = Queue() 
+    app.shared_ctx.exch_queue = Queue() 
 
     # Start background processes
     app.ctx.db_proc = Process(target=db_process, args=(app.shared_ctx.db_queue,))
     app.ctx.db_proc.start()
-    app.ctx.broker_proc = Process(target=broker_process, args=(app.shared_ctx.broker_queue,))
-    app.ctx.broker_proc.start()
+    app.ctx.exch_proc = Process(target=exch_process, args=(app.shared_ctx.exch_queue,))
+    app.ctx.exch_proc.start()
 
 @app.listener('before_server_start')
 async def setup_worker(app, loop):
 
     logger.debug("Setting up worker")
+    if not hasattr(app.shared_ctx, "db_queue"):
+        raise Exception("DB Queue not initialized")
+    if not hasattr(app.shared_ctx, "exch_queue"):
+        raise Exception("exch Queue not initialized")
 
     
 
@@ -53,9 +58,9 @@ if __name__ == "__main__":
         # Stop background processes on shutdown
         if hasattr(app.shared_ctx, "db_queue"):
             app.shared_ctx.db_queue.put("STOP")
-        if hasattr(app.shared_ctx, "broker_queue"):
-            app.shared_ctx.broker_queue.put("STOP")
+        if hasattr(app.shared_ctx, "exch_queue"):
+            app.shared_ctx.exch_queue.put("STOP")
         if hasattr(app.ctx, "db_proc"):
             app.ctx.db_proc.join()
-        if hasattr(app.ctx, "broker_proc"):
-            app.ctx.broker_proc.join()
+        if hasattr(app.ctx, "exch_proc"):
+            app.ctx.exch_proc.join()

@@ -12,7 +12,7 @@ def create_loggers():
     LOGGING_CONFIG_DEFAULTS["formatters"]["generic"]            = {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}
     LOGGING_CONFIG_DEFAULTS["handlers"]["debug"]                = {"class": "logging.StreamHandler", "formatter": "generic", "stream": sys.stdout}
     LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root"]["level"]   = MY_DEFAULT_LEVEL
-    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.broker"]     = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.broker"}
+    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.exch"]     = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.exch"}
     LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.db"]         = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.db"}
     LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.webhook"]   = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.webhook"}
     LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.trading"]    = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.trading"}

@@ -1,6 +1,6 @@
 import logging
 
-logger = logging.getLogger("sanic.root.broker")
+logger = logging.getLogger("sanic.root.exch")
 
 async def execute_buy(ticker, price, quantity):
     logger.info("Executing BUY order: %s of %s at price %s", quantity, ticker, price)
