@@ -22,3 +22,4 @@ EXPOSE 8000
 
 # Command to run the app
 CMD ["python", "app/main.py"]
+#CMD ["sleep", "infinity"]
