@@ -9,13 +9,15 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Copy only the necessary files and folders
+# Copy requirements file first to leverage build cache
 COPY requirements.txt .
+
+# Install dependencies (cached unless requirements.txt changes)
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Copy only the necessary files and folders
 COPY app/ ./app
 COPY config.py .
-
-# Install dependencies in the virtual environment
-RUN pip install --no-cache-dir -r requirements.txt
 
 # Expose the application port
 # The default value of PORT is 10000 for all Render web services 
