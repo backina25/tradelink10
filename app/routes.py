@@ -1,17 +1,16 @@
 from sanic.response import json
 
 # project imports
+from app.utils.logger import webhook_logger
 from app.services.trading_service import execute_buy, execute_sell, handle_stop_loss
 
-
 def setup_routes(app):
-    print("Setting up routes...")  # Debug: Log route setup
     @app.post("/webhook")
     async def tradingview_webhook(request):
         try:
             data = request.json
-            print("Received data:", data)  # Debug: Log received payload
-            
+            webhook_logger.info("Received data: %s", data)
+
             # Validate payload
             required_fields = [
                 "strategy", "orderId", "action", "ticker", "price", "quantity"
@@ -19,18 +18,19 @@ def setup_routes(app):
             for field in required_fields:
                 if field not in data:
                     error_message = f"Missing required field: {field}"
-                    print("Error:", error_message)  # Debug: Log validation errors
+                    webhook_logger.warning(error_message)
                     return json({"error": error_message}, status=400)
 
-            # Safely extract fields with defaults
-            strategy = data.get("strategy", "unknown")
-            order_id = data.get("orderId", "unknown")
-            action = data.get("action", "unknown")
-            ticker = data.get("ticker", "unknown")
-            price = data.get("price", 0)
-            quantity = data.get("quantity", 0)
+            # Extract relevant fields
+            action = data["action"]
+            ticker = data["ticker"]
+            price = data["price"]
+            quantity = data["quantity"]
 
-            print(f"Action: {action}, Ticker: {ticker}, Price: {price}, Quantity: {quantity}")  # Debug: Log extracted fields
+            webhook_logger.info(
+                "Action: %s, Ticker: %s, Price: %s, Quantity: %s",
+                action, ticker, price, quantity
+            )
 
             # Process action
             if action.lower() == "buy":
@@ -41,11 +41,12 @@ def setup_routes(app):
                 await handle_stop_loss(ticker, price)
             else:
                 error_message = "Unknown action"
-                print("Error:", error_message)
+                webhook_logger.error(error_message)
                 return json({"error": error_message}, status=400)
-            
+
+            webhook_logger.info("Signal processed successfully")
             return json({"status": "success", "message": "Signal processed"}, status=200)
 
         except Exception as e:
-            print("Unhandled Exception:", e)  # Debug: Log unexpected errors
+            webhook_logger.exception("Unhandled exception occurred")
             return json({"error": "Internal Server Error"}, status=500)

@@ -2,6 +2,9 @@
 import asyncio
 from asyncpg import create_pool
 
+# project imports
+from app.utils.logger import db_logger
+
 DB_POOL = None
 
 async def setup_db():
@@ -13,6 +16,8 @@ async def setup_db():
         host="your_db_host",
         port="5432"
     )
+    db_logger.debug("Database connection established")
 
 async def close_db():
     await DB_POOL.close()
+    db_logger.debug("Database connection closed")
