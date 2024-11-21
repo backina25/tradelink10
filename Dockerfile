@@ -13,7 +13,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 COPY requirements.txt .
 
 # Install dependencies (cached unless requirements.txt changes)
-RUN pip install --no-cache-dir -r requirements.txt
+#RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install -r requirements.txt
 
 # Copy only the necessary files and folders
 COPY app/ ./app

@@ -1,5 +1,5 @@
 #!/bin/bash
 docker builder prune
-docker build --no-cache -t tradelink10 .
-docker run -it -p 10000:10000 tradelink10
-#docker run -it tradelink10 python app/main.py
+docker build -t tradelink10 .
+docker run --env-file .env -it -p 10000:10000 tradelink10
+#docker run --env-file .env -it tradelink10 python app/main.py

@@ -2,42 +2,39 @@ import multiprocessing
 import asyncio
 from multiprocessing import Queue
 
-# Dedicated queue for DB operations
-db_queue = Queue()
-# Dedicated queue for Broker operations
-broker_queue = Queue()
 
-async def db_process(db_queue):
-    """Background process to handle DB operations."""
+async def db_process_async(db_queue):
+    """Async DB process coroutine."""
     while True:
-        request = db_queue.get()  # Blocking call to wait for requests
+        request = await asyncio.get_event_loop().run_in_executor(None, db_queue.get)
         if request == "STOP":
             break
         # Process the DB operation here
-        await asyncio.sleep(0)  # Yield control to the event loop
         operation, payload = request
         if operation == "INSERT_SIGNAL":
-            # Simulate DB insert logic
             print(f"DB Insert: {payload}")
-            # Return a response (e.g., success/failure)
+            # Simulate a success response
+            await asyncio.sleep(1)  # Simulate async DB operation
             db_queue.put(("SUCCESS", None))
 
-async def broker_process(broker_queue):
-    """Background process to handle Broker operations."""
+def db_process(db_queue):
+    """Run the async DB process using asyncio.run."""
+    asyncio.run(db_process_async(db_queue))
+
+async def broker_process_async(broker_queue):
+    """Async Broker process coroutine."""
     while True:
-        request = broker_queue.get()  # Blocking call to wait for requests
+        request = await asyncio.get_event_loop().run_in_executor(None, broker_queue.get)
         if request == "STOP":
             break
         # Process the broker operation here
         operation, payload = request
         if operation == "EXECUTE_TRADE":
             print(f"Broker Trade Execution: {payload}")
+            # Simulate async broker API operation
+            await asyncio.sleep(1)
             broker_queue.put(("SUCCESS", None))
 
-async def start_background_processes(db_queue, broker_queue):
-    """Start the background processes."""
-    db_proc = multiprocessing.Process(target=db_process, args=(db_queue,))
-    broker_proc = multiprocessing.Process(target=broker_process, args=(broker_queue,))
-    db_proc.start()
-    broker_proc.start()
-    return db_proc, broker_proc
+def broker_process(broker_queue):
+    """Run the async Broker process using asyncio.run."""
+    asyncio.run(broker_process_async(broker_queue))

@@ -1,37 +1,20 @@
 import asyncio
 import logging
+from sanic.log import LOGGING_CONFIG_DEFAULTS
+import sys
 
-def create_logger(name, level=logging.INFO):
-    """
-    Create and configure a logger to write logs to STDERR.
-    """
-    logger = logging.getLogger(name)
-    logger.setLevel(level)
+# Sanic Logging configuration
+# see, https://github.com/sanic-org/sanic/blob/main/sanic/logging/default.py
 
-    # Stream handler for STDERR
-    stream_handler = logging.StreamHandler()
-    stream_handler.setLevel(level)
-    # Async stream handler for STDERR
-    class AsyncStreamHandler(logging.StreamHandler):
-        async def emit(self, record):
-            loop = asyncio.get_event_loop()
-            await loop.run_in_executor(None, super().emit, record)
+# Setup logging
+def create_loggers():
+    MY_DEFAULT_LEVEL="DEBUG"
+    LOGGING_CONFIG_DEFAULTS["formatters"]["generic"]            = {"format": "%(asctime)s - %(name)s - %(levelname)s - %(message)s"}
+    LOGGING_CONFIG_DEFAULTS["handlers"]["debug"]                = {"class": "logging.StreamHandler", "formatter": "generic", "stream": sys.stdout}
+    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root"]["level"]   = MY_DEFAULT_LEVEL
+    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.broker"]     = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.broker"}
+    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.db"]         = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.db"}
+    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.webhook"]   = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.webhook"}
+    LOGGING_CONFIG_DEFAULTS["loggers"]["sanic.root.trading"]    = {"level": MY_DEFAULT_LEVEL, "handlers": ["debug"], "propagate": False, "qualname": "sanic.root.trading"}
 
-    stream_handler = AsyncStreamHandler()
-    # Log format
-    formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    )
-    stream_handler.setFormatter(formatter)
 
-    # Add handler to logger
-    if not logger.hasHandlers():  # Avoid duplicate handlers in hot reloads
-        logger.addHandler(stream_handler)
-
-    return logger
-
-# Create individual loggers for different subsystems
-webhook_logger = create_logger("webhook")
-trading_logger = create_logger("trading")
-db_logger = create_logger("database")
-broker_logger = create_logger("broker")
