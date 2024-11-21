@@ -32,6 +32,9 @@ async def exch_process_async():
             elif operation == "STOP":
                 break
 
+        # Sleep for a short time to avoid blocking the event loop
+        await asyncio.sleep(0.1)
+
 def exch_process():
     """Run the async exch process using asyncio.run."""
     asyncio.run(exch_process_async())
