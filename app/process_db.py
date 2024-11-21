@@ -26,9 +26,15 @@ async def db_process_async():
                 signal = Signal.from_json(payload)
                 logger.debug(f"DB Insert: {signal.__repr__}")
 
-                # Simulate async exch API operation
-                await asyncio.sleep(1)
-            
+                try:
+                    async with Signal.async_session() as session:
+                        async with session.begin():
+                            session.add(signal)
+                            await session.commit()
+                    logger.debug("Signal inserted into the database successfully.")
+                except Exception as e:
+                    logger.error(f"Failed to insert signal into the database: {e}")
+
             elif operation == "STOP":
                 break 
 
