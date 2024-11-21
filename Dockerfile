@@ -9,8 +9,10 @@ ENV VIRTUAL_ENV=/opt/venv
 RUN python -m venv $VIRTUAL_ENV
 ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 
-# Copy the project files to the container
-COPY . .
+# Copy only the necessary files and folders
+COPY requirements.txt .               # Copy requirements
+COPY app/ ./app                       # Copy app directory
+COPY config.py .                      # Copy config file
 
 # Install dependencies in the virtual environment
 RUN pip install --no-cache-dir -r requirements.txt
