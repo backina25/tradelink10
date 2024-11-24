@@ -9,8 +9,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 # project imports
 from app.models_db import Signal
-from app.utils.database import AsyncSessionLocal
+from app.models_mem import OurGenericList
 from app.services.trading_service import execute_buy, execute_sell, handle_stop_loss
+from app.utils.database import AsyncSessionLocal
+from app.utils.serializer import datetime_serializer
+
 
 logger = logging.getLogger("sanic.root.webhook")
 
@@ -19,8 +22,8 @@ api = Blueprint("api", url_prefix="/api")
 
 @api.get("/signals")
 async def get_signals(request):
-    """All Signals are always propagated by the DB broker."""
-    return json_sanic(request.app.ctx.signals, status=200)
+    item_list = request.app.ctx.signals.to_dict()['items']
+    return json_sanic(item_list, status=200)
 
 def setup_routes(app):
 
@@ -40,15 +43,22 @@ def setup_routes(app):
                 price=data["price"],
                 quantity=data["quantity"]
             )
+            ourlist=OurGenericList([signal])
 
             # Send the signal to the DB process
-            await app.ctx.redis_conn.publish("db_channel", json.dumps({"operation": "INSERT_SIGNAL", "payload": signal.to_json()}, use_decimal=True))
+            await app.ctx.redis_conn.publish("db_channel", json.dumps({
+                "operation": "INSERT_SIGNAL",
+                "item_list": ourlist.to_json()},    # to_dict() does not work here: Input string must be text, not bytes
+                sort_keys=True, default=datetime_serializer, use_decimal=True))
             
             # Example: Send a trade execution to the exch process
-            if signal.action.lower() in ["buy", "sell"]:
-                await app.ctx.redis_conn.publish("broker_channel", json.dumps({"operation": "EXECUTE_TRADE", "payload": signal.to_json()}, use_decimal=True))
-            else:
-                return json_sanic({"status": "error", "message": "Invalid action"}, status=400)
+            # if signal.action.lower() in ["buy", "sell"]:
+            #     await app.ctx.redis_conn.publish("broker_channel", json.dumps({
+            #         "operation": "EXECUTE_TRADE",
+            #         "item_list": ourlist.to_json()},    # to_dict() does not work here: Input string must be text, not bytes
+            #         sort_keys=True, default=datetime_serializer, use_decimal=True))
+            # else:
+            #     return json_sanic({"status": "error", "message": "Invalid action"}, status=400)
 
             # Respond to the client immediately
             return json_sanic({"status": "success", "message": "Signal processed: {signal}"}, status=200)

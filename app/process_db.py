@@ -5,17 +5,22 @@ import logging
 import multiprocessing
 import os
 import redis.asyncio
-
-# project imports
-import config
-from app.models_db import Account, Signal, WebSource
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.future import select
 from sqlalchemy.dialects.postgresql import insert
+
+# project imports
+import config
+from app.models_mem import OurGenericList
+from app.models_db import Account, Signal, WebSource
+from app.utils.serializer import datetime_serializer
 import logging
 
+# project definitions and globals
 logger = logging.getLogger("sanic.root.db")
+
+# ------------------------------------------------------------------------------
 
 class DBProcess:
     def __init__(self):
@@ -26,20 +31,27 @@ class DBProcess:
 
     async def broadcast(self, db_class):
         try:
-            logger.debug(f"DB Process: fetching all {db_class.__name__.lower()} from database...")
+            logger.debug(f"DB Process: fetching all {db_class.get_tablename()} from database...")
             async for session in self.get_async_session():
-                items = await session.execute(select(db_class))
-                items = items.scalars().all()
-                items = [item.to_dict() for item in items]
-            
-            logger.debug(f"DB Process: publishing {len(items)} {db_class.__name__.lower()} to workers_channel...")
-            await self.redis_conn.publish("workers_channel", json.dumps({
-                "operation": "INITIALIZE",
-                "class_name": db_class.__name__,
-                "dict_list": items},
-                indent=4, sort_keys=True, default=str, use_decimal=True))
+                item_locations = await session.execute(select(db_class))
+                items_objects = item_locations.scalars().all()
+                logger.debug(f"DB Process: fetched {len(items_objects)} {db_class.get_tablename()} from database with FIRST element of type {type(items_objects[0])}")
+                items = OurGenericList(items_objects, force_item_class=db_class)
+                # items = [item.to_json() for item in items]
+
         except Exception as e:
-            logger.error(f"DB Process: failed to fetch {db_class.__name__.lower()} from database: {e}")
+            logger.error(f"DB Process: failed to fetch {db_class.get_tablename()} from database: {e}")
+            return
+        
+        if len(items) > 0:
+            try:            
+                logger.debug(f"DB Process: publishing {len(items)} {db_class.get_tablename()} to workers_channel...")
+                await self.redis_conn.publish("workers_channel", json.dumps({
+                    "operation": "INITIALIZE",
+                    "item_list": items.to_json()},    # to_dict() does not work here: Input string must be text, not bytes
+                    sort_keys=True, default=datetime_serializer, use_decimal=True))
+            except Exception as e:
+                logger.error(f"DB Process: failed to publish {db_class.get_tablename()}: {e}")
 
     async def db_add_initial_data(self):
         # Add default rows to the database if table is empty
@@ -48,7 +60,7 @@ class DBProcess:
                 items = await session.execute(select(cls))
                 items = items.scalars().all()
                 if len(items) == 0:
-                    logger.debug(f"DB Process: adding default {cls.__name__.lower()} to database...")
+                    logger.debug(f"DB Process: adding default {cls.get_tablename()} to database...")
                     if cls.__name__ in config.DATABASE['initial_data']:
                         for item in config.DATABASE['initial_data'][cls.__name__]:
                             await cls(**item).insert(session)
@@ -95,6 +107,24 @@ class DBProcess:
         await self.db_create_tables()
         await self.db_add_initial_data()
 
+    async def op_insert(self, signal_list: OurGenericList):
+        operation="INSERT_SIGNAL"
+        if signal_list.item_class != Signal:
+            raise ValueError(f"DB Process: {operation}: received list with bad item_class {signal_list.item_class} (expected Signal): {signal_list}")
+        logger.debug(f"DB Process: {operation}: writing {len(signal_list)} signals to database...")
+        async for session in self.get_async_session():
+            for signal in signal_list:
+                await signal.insert(session)
+                await session.commit()
+                await session.refresh(signal)
+
+        logger.debug(f"DB Process: {operation}: publishing {len(signal_list)} signals to workers...")
+        await self.redis_conn.publish("workers_channel", json.dumps({
+            "operation": "ADD",
+            "item_list": signal_list.to_json()},    # to_dict() does not work here: Input string must be text, not bytes
+            sort_keys=True, default=datetime_serializer, use_decimal=True))
+
+
 
     async def run(self):
 
@@ -110,32 +140,31 @@ class DBProcess:
             # Check for new messages on the `db_channel` channel
             message = await self.redis_pubsub.get_message(ignore_subscribe_messages=True)
             if message is not None and message["type"] == "message":
-                logger.debug(f"DB Process received message: {message}")
 
-                # extract the operation and payload from the message
-                message_data = json.loads(message['data'], use_decimal=True)
+                # parse message data (expected to be in JSON format)
+                try:
+                    message_data = json.loads(message['data'], use_decimal=True)
+                except Exception as e:
+                    logger.error(f"DB Process: failed to parse JSON message: {e}")
+                    continue
+
+                # verify
+                if "operation" not in message_data:
+                    logger.error(f"DB Process: received message without operation: {message}")
+                    continue
                 operation = message_data["operation"]
-                request_id = message_data.get("request_id", None)
-                payload = message_data.get("payload", None)
+
+                # STOP
+                if operation == "STOP":
+                    break
 
                 # ------------------------------
                 if operation == "INSERT_SIGNAL":
-                    signal = Signal.from_json(payload)
-                    logger.debug(f"DB Insert: {signal.__repr__}")
                     try:
-                        async for session in self.get_async_session():
-                            logger.debug("DB Process: writing 1 received signal to database...")
-                            await signal.insert(session)
-                            logger.debug("DB Process: publishing 1 new signal to workers_channel")
-                            await self.redis_conn.publish("workers_channel", json.dumps({
-                                "operation": "ADD_SIGNAL",
-                                "request_id": request_id,
-                                "payload": signal},
-                                indent=4, sort_keys=True, default=str, use_decimal=True))
-            
+                        ourlist = OurGenericList.from_json(message_data["item_list"])
+                        await self.op_insert(ourlist)
                     except Exception as e:
-                        logger.error(f"Failed to insert signal into the database: {e}")
-
+                        logger.error(f"DB Process: ignoring message INSERT_SIGNAL due to error: {e}")
                 elif operation == "STOP":
                     break 
 

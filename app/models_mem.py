@@ -7,6 +7,10 @@ import simplejson as json
 from typing import Any, ClassVar, Dict, List, Optional, TypeVar, Type, Tuple
 
 # project imports and definitions
+from app.models_db import Account, Signal, WebSource
+from app.utils.serializer import datetime_serializer
+
+# project definitions and globals
 logger = logging.getLogger("sanic.root.exch")
 
 # --------------------------------------------------------------------------------------------
@@ -28,7 +32,7 @@ class OurBaseMemoryModel(ABC):
         return f"<{self.__class__.__name__}({', '.join(f'{key}={value}' for key, value in field_values.items())})>"
 
     def __str__(self):
-        return str(self.dict_blacken())
+        return str(self.to_dict_blacken())
 
     @classmethod
     def classmethodname(cls):
@@ -44,7 +48,7 @@ class OurBaseMemoryModel(ABC):
         if not isinstance(other, self.__class__):
             raise TypeError(f"Cannot compare objects of different classes ({self.__class__.__name__} vs {other.__class__.__name__}).")
         # Compare all fields
-        for field in self.model_fields.keys():
+        for field in self.get_field_names():
             if field not in exclude_fields and getattr(self, field) != getattr(other, field):
                 logger.debug(f"{self.instmethodname()}: compare_fields() failed for field {field}={getattr(self, field)}")
                 same_same = False
@@ -65,15 +69,6 @@ class OurBaseMemoryModel(ABC):
                 same_same = False
         return same_same
 
-    def dict_blacken(self, blacken_keys: List[str]=['password', 'passphrase']) -> Dict[str, Any]:
-        dict_copy = {}
-        for attr_key in self.model_fields.keys():
-            if attr_key in blacken_keys:
-                dict_copy[attr_key] = "XXXXXXXXXX"
-            else:
-                dict_copy[attr_key] = getattr(self, attr_key)
-        return dict_copy
-
     @classmethod
     def get_all_subclasses(cls):
         all_subclasses = []
@@ -82,20 +77,27 @@ class OurBaseMemoryModel(ABC):
             all_subclasses.extend(subclass.get_all_subclasses())
         return all_subclasses
 
+    def get_field_names(self):
+        return [attr for attr in self.__dict__ if not attr.startswith('_')]
+
     def find(self, query):
         return [item for item in self if item.compare(query)]
-    
+
     @classmethod
-    def from_json(cls, json_str):
-        data = json.loads(json_str, indent=4, sort_keys=True, default=str, use_decimal=True)
-        return cls(**data)
+    def from_json(cls, json_str: str = None):
+        logprefix = f"{cls.__name__}.from_json(): "
+        if json_str is None or json_str == "":
+            raise ValueError(f"{logprefix}requires a JSON string (got {str(json_str)})")
+        try:
+            dict_from_json = json.loads(json_str, use_decimal=True)
+        except Exception as e:
+            raise ValueError(f"{logprefix}failed to parse JSON: {e}")
+        # logger.debug(f"{logprefix}: dict_from_json={dict_from_json}")
+        return cls(**dict_from_json)
 
     def instmethodname(self):
         return f"{self.__class__.__name__}.{inspect.currentframe().f_back.f_code.co_name}"
  
-    def keys(self):
-        return [attr for attr in self.__dict__ if not attr.startswith('_')] 
-
     def match_criteria(self, **kwargs) -> bool:
         # supported:
         #   - plain matching: use {key: 'value'}
@@ -133,7 +135,7 @@ class OurBaseMemoryModel(ABC):
         was_modified = False
         if not isinstance(other, self.__class__):
             raise TypeError(f"Cannot compare objects of different classes ({self.__class__.__name__} vs {other.__class__.__name__}).")
-        for field in self.keys():
+        for field in self.get_field_names():
             if getattr(other, field) is not None and getattr(self, field) != getattr(other, field):
                 setattr(self, field, getattr(other, field))
                 was_modified = True
@@ -148,8 +150,26 @@ class OurBaseMemoryModel(ABC):
     def primary_key(self):
         pass
 
+    def to_dict(self):
+        return {attr: getattr(self, attr) for attr in self.get_field_names()}
+
+    def to_dict_blacken(self, blacken_keys: List[str]=['password', 'passphrase']) -> Dict[str, Any]:
+        dict_copy = {}
+        for attr_key in self.get_field_names():
+            if attr_key in blacken_keys:
+                dict_copy[attr_key] = "XXXXXXXXXX"
+            else:
+                dict_copy[attr_key] = getattr(self, attr_key)
+        return dict_copy
+
     def to_json(self):
-        return json.dumps(self.__dict__, indent=4, sort_keys=True, default=str, use_decimal=True)
+        inst_as_dict = self.to_dict()
+        logger.debug(f"{self.instmethodname()}: to_json()[1]: inst_as_dict={inst_as_dict}")
+        json_str = json.dumps(inst_as_dict, indent=4, sort_keys=True, default=datetime_serializer, use_decimal=True)
+        logger.debug(f"{self.instmethodname()}: to_json()[2: json_str={json_str}")
+        return json_str
+
+# --------------------------------------------------------------------------------------------
 
 class Position(OurBaseMemoryModel):
     pass
@@ -163,28 +183,127 @@ class Order(OurBaseMemoryModel):
 class Exchange(OurBaseMemoryModel):
     pass
 
+
 # --------------------------------------------------------------------------------------------
+class OurGenericList(List):
+    # Special list where the first item determines the type of the list! Once an elemnt
+    # is added to the list, all subsequent items must be of the same type. Once the
+    # item type is set, it cannot be changed.
+    #
+    # Items MAY support the following methods:
+    #   - __eq__()          # used to compare objects for equality
+    #   - __lt__()          # used for sorting the list
+    #
+    # Items MUST support the following methods:
+    _methods_required_by_item_class = [ "from_json", "match_criteria", "modify", "pk", "to_json" ]
 
-class OurBaseList(List):
-    def __init__(self, items: List[OurBaseMemoryModel]=[], item_type: Type[OurBaseMemoryModel]=OurBaseMemoryModel):
-        for item in items:
-            if not isinstance(item, item_type):
-                raise TypeError(f"{self.__class__.__name__} can only contain {item_type.__name__} objects, not {type(item)}")
-        self.item_type = item_type
-        super().__init__(items)
+    def __init__(self, *args, force_item_class=None):
+        # logger.debug(f"{self.__class__.__name__}.__init__(): args={args}, force_item_class={force_item_class}")
+        if len(args) > 1:
+            raise ValueError(f"{self.__class__.__name__} can only be called with a single list argument, not {len(args)}")
+        if len(args) == 1 and type(args[0]) != list:
+            raise ValueError(f"{self.__class__.__name__} argument must be a list, not {type(args[0])}")
 
-    def append(self, item: OurBaseMemoryModel):
-        if not isinstance(item, self.item_type):
-            raise TypeError(f"{self.__class__.__name__} can only contain {self.item_type.__name__} objects, not {type(item)}")
+        # set item_class (either explicitly or by the first item in the list)
+        self.item_class = None    
+        if force_item_class is not None:
+            if not inspect.isclass(force_item_class):
+                raise ValueError(f"{self.__class__.__name__} requires the force_item_class argument to be a class, not {type(force_item_class)}")
+            self.item_class = force_item_class
+        if len(args) == 1:
+            if type(args[0][0]) == dict and force_item_class is None:
+                raise ValueError(f"{self.__class__.__name__} requires the force_item_class argument if it is given a list of dict items (got None)")
+            if force_item_class is None:
+                self.item_class = type(args[0][0])
+
+        # allow empty list
+        if len(args) == 0:
+            super().__init__()
+            return
+        
+        obj_list = []
+        if len(args) > 1:
+            raise ValueError(f"{self.__class__.__name__} can only be called with a single list argument, not {len(args)}")
+        if type(args[0]) != list:
+            raise ValueError(f"{self.__class__.__name__} argument must be a list, not {type(args[0])}")
+        # the constructor accepts...
+        #   1) items with a class having the required methods
+        #   2) items of type dict if force_item_class is given
+        for item in args[0]:
+            if isinstance(item, self.item_class):
+                obj_list.append(item)
+            elif type(item) == dict:
+                item_obj = self.item_class(**item)
+                obj_list.append(item_obj)
+            else:
+                raise TypeError(f"{self.__class__.__name__} can only contain {self.item_class.__name__} objects, not {type(item)}")
+        super().__init__(obj_list)
+
+    def setattr(self, key, value):
+        if key == "item_class":
+            for method in self.__class__._methods_required_by_item_class:
+                if not hasattr(value, method):
+                    raise ValueError(f"{self.__class__.__name__} wanted {key} {value.__name__} misses required method {method}")
+        super().__setattr__(key, value)
+
+    def append(self, item):
+        if self.item_class is None:
+            self.item_class = type(item)
+        if not isinstance(item, self.item_class):
+            raise TypeError(f"{self.__class__.__name__} can only contain {self.item_class.__name__} objects, not {type(item)}")
+        # logger.debug(f"{self.__class__.__name__}.append(): appending item of type {type(item)}: {item}")
         super().append(item)
 
-    def insert(self, index: int, item: OurBaseMemoryModel):
-        if not isinstance(item, self.item_type):
-            raise TypeError(f"{self.__class__.__name__} can only contain {self.item_type.__name__} objects, not {type(item)}")
+    @classmethod
+    def from_dict(cls, given_dict: dict):
+        logprefix = f"{cls.__name__}.from_dict(): "
+
+        # logger.debug(f"{logprefix}given_dict={given_dict}")
+
+        # verify given_dict
+        if given_dict is None:
+            raise ValueError(f"{logprefix}requires a dict (got None)")
+        if "item_class" not in given_dict:
+            raise ValueError(f"{logprefix}missing item_class in dict")
+        if "items" not in given_dict:
+            raise ValueError(f"{logprefix}missing items in dict")
+        # set item_class
+        if given_dict["item_class"] is None:
+            raise ValueError(f"{logprefix}item_class is None (explicitly set to None)")
+        if type(given_dict["items"]) != list:
+            raise ValueError(f"{logprefix}items is not a list")
+
+        # get item class (either as class or as classname)
+        if type(given_dict["item_class"]) == str:
+            if given_dict["item_class"] not in globals():
+                raise ValueError(f"{logprefix}item class {given_dict['item_class']} not found")
+            item_class = globals()[given_dict["item_class"]]
+        else:
+            item_class = given_dict["item_class"]
+
+        # call constructor (which will do more checks)
+        # logger.debug(f"{logprefix}calling constructor with: item_class={item_class}, items={given_dict['items']} and first item type={type(given_dict['items'][0])}")
+        return cls(given_dict["items"], force_item_class=item_class)
+        
+    @classmethod
+    def from_json(cls, json_str: str):
+        logprefix = f"{cls.__name__}.from_json(): "
+        if json_str is None or json_str == "":
+            raise ValueError(f"{logprefix}requires a JSON string (got {str(json_str)})")
+        # logger.debug(f"{logprefix}json_str={json_str}")
+        dict_from_json = json.loads(json_str, use_decimal=True)
+        # logger.debug(f"{logprefix}type(dict_from_json)={type(dict_from_json)}, list_from_json={dict_from_json}")
+        return cls.from_dict(dict_from_json)
+
+    def insert(self, index: int, item):
+        if self.item_class is None:
+            self.item_class = type(item)
+        if not isinstance(item, self.item_class):
+            raise TypeError(f"{self.__class__.__name__} can only contain {self.item_class.__name__} objects, not {type(item)}")
         super().insert(index, item)
 
-    def find_by_match_criteria(self, **kwargs) -> 'OurBaseList':
-        match_list = OurBaseList(item_type=self.item_type)
+    def find_by_match_criteria(self, **kwargs):
+        match_list = self.__class__()
         for item in self:
             if item.match_criteria(**kwargs):
                 match_list.append(item)
@@ -205,6 +324,8 @@ class OurBaseList(List):
 
     def modify(self, other_list):
         was_modified = False
+        if not isinstance(other_list, self.__class__):
+            raise TypeError(f"{self.__class__.__name__}.modify() can only be called with a {self.__class__.__name__} object, not {type(other_list)}")
         pk_index = {}
         for self_index in range(len(self)):
             pk_index[self[self_index].pk] = {'self': self_index}
@@ -220,24 +341,22 @@ class OurBaseList(List):
         return was_modified
 
     def subtract(self, other_list):
+        if not isinstance(other_list, self.__class__):
+            raise TypeError(f"{self.__class__.__name__}.subtract() can only be called with a {self.__class__.__name__} object, not {type(other_list)}")
         for item in other_list:
             self.remove_pk(item.pk)
+
+    def to_dict(self):
+        for item in self:
+            if not hasattr(item, "to_dict"):
+                raise ValueError(f"{self.__class__.__name__} item of type {item.__class__.__name__} misses method to_dict(): {item}")
+        return { "item_class": self.item_class.__name__, "items": [item.to_dict() for item in self] }
+
+    def to_json(self):
+        list_dict = self.to_dict()
+        return json.dumps(list_dict, indent=4, sort_keys=True, default=datetime_serializer, use_decimal=True)
 
     def pks(self):
         return [item.pk for item in self]
 
-class PositionList(OurBaseList):
-    def __init__(self, positions: List[Position]=[]):
-        super().__init__(positions, Position)
-
-class TradeList(OurBaseList):
-    def __init__(self, trades: List[Trade]=[]):
-        super().__init__(trades, Trade)
-
-class OrderList(OurBaseList):
-    def __init__(self, orders: List[Order]=[]):
-        super().__init__(orders, Order)
-
-class ExchangeList(OurBaseList):
-    def __init__(self, exchanges: List[Exchange]=[]):
-        super().__init__(exchanges, Exchange)
+    pass
